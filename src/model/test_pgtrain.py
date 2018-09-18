@@ -47,7 +47,7 @@ def get_augs():
 def binary_loss(y, p):
     return np.mean(-(y * np.log(p) + (1-y)*np.log(1-p)))
 
-PATH = "/home/ubuntu/dogscats/"
+PATH = "/Users/x/Downloads/GraphicsScratch/dogscats/"
 sz=224
 
 torch.cuda.is_available()
