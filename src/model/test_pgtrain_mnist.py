@@ -70,6 +70,44 @@ def convert_ndarry(matrix):
     except AttributeError as e:
         print(e)
 
+def get_data(arch, sz, bs):
+    tfms = tfms_from_model(arch, sz, aug_tfms=transforms_side_on, max_zoom=1.1)
+    data = ImageClassifierData.from_csv(PATH, 'train', f'{PATH}labels.csv', test_name='test', val_idxs=val_idxs, suffix='.jpg', tfms=tfms, bs=bs)
+
+
+def pgtrain_classification_fromScratch(learn, data, convg_tol, imgsz_sched=[]):
+
+    # define image size variation during training
+    if len(imgsz_sched) == 0:
+        imgsz_sched = [0.25, 0.5, 0.75, 1] * data.shape[0]
+
+    # define differential learning rates
+    lr = np.array([0.001, 0.0075, 0.01])
+
+    for sz in imgsz_sched:
+        # simply change data size for each training epoch
+        learn.set_data(get_data(sz, bs))
+
+        if index > 0:
+            learn.fit(1e-2, 1,wd=wd)
+
+        # by default, [:-2] layers are all freezed initially
+        learn.unfreeze()
+
+        # find optimal learning rate
+        learn.lr_find()
+        learn.fit(lr, max_epochs, cycle_len=3, cycle_mult = 2)
+
+    # plot loss vs. learning rate
+    learn.sched.plot()
+
+def predict_test_classification(learn):
+    log_preds, y_test = learn.TTA(is_test=True)
+    probs = np.mean(np.exp(log_preds), 0)
+    accuracy_np(probs, y)
+
+# retrain full model
+learn.fit(lr, 3, cycle_len=1, cycle_mult=2)
 
 # reshape data and add color channels
 X_train = reshape_img(X_train)

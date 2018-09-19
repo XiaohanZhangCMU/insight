@@ -55,7 +55,6 @@ def index():
     # Main page
     return render_template('index.html')
 
-
 @app.route('/predict', methods=['GET', 'POST'])
 def upload():
     if request.method == 'POST':
