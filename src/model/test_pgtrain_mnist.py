@@ -14,7 +14,6 @@ from fastai.plots import *
 
 print(torch.cuda.is_available(), torch.backends.cudnn.enabled)
 
-comp_name = "digit_recognizer"
 wd = "../../../MNIST/"
 
 # load data
