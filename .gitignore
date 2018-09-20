@@ -5,3 +5,4 @@ src/torch-flask-webapp/*DS_Store
 src/torch-flask-webapp/.DS_Store
 *~
 *.jpg
+*.JPEG

@@ -11,38 +11,6 @@ from fastai.dataset import *
 from fastai.sgdr import *
 from fastai.plots import *
 
-
-print(torch.cuda.is_available(), torch.backends.cudnn.enabled)
-
-wd = "../../../MNIST/"
-
-# load data
-train_df = pd.read_csv(f"{wd}train.csv")
-test_df = pd.read_csv(f"{wd}test.csv")
-
-print(train_df.shape, test_df.shape)
-
-# create validation dataset
-val_df = train_df.sample(frac=0.2, random_state=1337)
-val_df.shape
-
-# remove validation data from train dataset
-train_df = train_df.drop(val_df.index)
-train_df.shape
-
-# separate labels from data
-Y_train = train_df["label"]
-Y_valid = val_df["label"]
-X_train = train_df.drop("label", axis=1)
-X_valid = val_df.drop("label", axis=1)
-
-print(X_train.shape, X_valid.shape)
-print(Y_train.shape, Y_valid.shape)
-
-# display an actual image/digit
-img = X_train.iloc[0,:].values.reshape(28,28)
-plt.imshow(img, cmap="gray")
-
 def reshape_img(matrix):
     """
     Reshape an existing 2D pandas.dataframe into 3D-numpy.ndarray
@@ -80,6 +48,8 @@ def pgtrain_classification_fromScratch(learn, data, convg_tol, imgsz_sched=[]):
     # define image size variation during training
     if len(imgsz_sched) == 0:
         imgsz_sched = [0.25, 0.5, 0.75, 1] * data.shape[0]
+    else:
+        imgsz_sched = [ i*data.shape[0] for i in imgsz_sched]
 
     # define differential learning rates
     lr = np.array([0.001, 0.0075, 0.01])
@@ -106,8 +76,37 @@ def predict_test_classification(learn):
     probs = np.mean(np.exp(log_preds), 0)
     accuracy_np(probs, y)
 
-# retrain full model
-learn.fit(lr, 3, cycle_len=1, cycle_mult=2)
+
+print(torch.cuda.is_available(), torch.backends.cudnn.enabled)
+
+wd = "../../../MNIST/"
+
+# load data
+train_df = pd.read_csv(f"{wd}train.csv")
+test_df = pd.read_csv(f"{wd}test.csv")
+
+print(train_df.shape, test_df.shape)
+
+# create validation dataset
+val_df = train_df.sample(frac=0.2, random_state=1337)
+val_df.shape
+
+# remove validation data from train dataset
+train_df = train_df.drop(val_df.index)
+train_df.shape
+
+# separate labels from data
+Y_train = train_df["label"]
+Y_valid = val_df["label"]
+X_train = train_df.drop("label", axis=1)
+X_valid = val_df.drop("label", axis=1)
+
+print(X_train.shape, X_valid.shape)
+print(Y_train.shape, Y_valid.shape)
+
+# display an actual image/digit
+img = X_train.iloc[0,:].values.reshape(28,28)
+plt.imshow(img, cmap="gray")
 
 # reshape data and add color channels
 X_train = reshape_img(X_train)
@@ -122,16 +121,9 @@ test_df = add_color_channel(test_df)
 Y_train = convert_ndarry(Y_train)
 Y_valid = convert_ndarry(Y_valid)
 
-# run sanity checks
 preprocessed_data = [X_train, Y_train, X_valid, Y_valid, test_df]
 print([e.shape for e in preprocessed_data])
 print([type(e) for e in preprocessed_data])
-
-
-# define architecture
-arch = resnet50
-sz = 28
-classes = np.unique(Y_train)
 
 data = ImageClassifierData.from_arrays(path=wd,
                                        trn=(X_train, Y_train),
@@ -140,39 +132,11 @@ data = ImageClassifierData.from_arrays(path=wd,
                                        test=test_df,
                                        tfms=tfms_from_model(arch, sz))
 
+
 learn = ConvLearner.pretrained(arch, data, precompute=True)
-# find optimal learning rate
-lrf = learn.lr_find()
 
-# plot loss vs. learning rate
-learn.sched.plot()
+pgtrain_classification_from_scratch(learn, data, imgsz_sched=[0.25, 0.5, 0.75, 1])
 
-# fit learner
-learn.fit(1e-2, 2)
-
-#learn.save("28_lastlayer")
+predict_test_classification(learn)
 
 
-# disable precompute and unfreeze layers
-learn.precompute=False
-learn.unfreeze()
-
-# define differential learning rates
-lr = np.array([0.001, 0.0075, 0.01])
-
-# retrain full model
-learn.fit(lr, 3, cycle_len=1, cycle_mult=2)
-
-# save full model
-#learn.save("28_all")
-
-# get accuracy for validation set
-log_preds, y = learn.TTA()
-probs = np.mean(np.exp(log_preds), 0)
-accuracy_np(probs, y)
-
-
-# predict on test set
-log_preds_test, y_test = learn.TTA(is_test=True)
-probs_test = np.mean(np.exp(log_preds_test), 0)
-probs_test.shape
