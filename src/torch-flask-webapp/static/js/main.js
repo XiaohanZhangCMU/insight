@@ -4,13 +4,14 @@ $(document).ready(function () {
     $('.loader').hide();
     $('#result').hide();
 
-    function readURL(input) {
+    function readURL(input, elemid) {
         if (input.files && input.files[0]) {
             var reader = new FileReader();
             reader.onload = function (e) {
-                $('#imagePreview').css('background-image', 'url(' + e.target.result + ')');
-                $('#imagePreview').hide();
-                $('#imagePreview').fadeIn(650);
+                console.log(elemid);
+                $(elemid).css('background-image', 'url(' + e.target.result + ')');
+                $(elemid).hide();
+                $(elemid).fadeIn(650);
             }
             reader.readAsDataURL(input.files[0]);
         }
@@ -20,7 +21,14 @@ $(document).ready(function () {
         $('#btn-predict').show();
         $('#result').text('');
         $('#result').hide();
-        readURL(this);
+        readURL(this, "#imagePreview");
+    });
+    $("#imageUpload-right").change(function () {
+        $('.image-section').show();
+        $('#btn-predict').show();
+        $('#result').text('');
+        $('#result').hide();
+        readURL(this, "#imagePreview-right");
     });
 
     $('#btn-predict').click(function () {
