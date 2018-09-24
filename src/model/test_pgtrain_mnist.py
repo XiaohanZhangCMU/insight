@@ -38,25 +38,70 @@ def convert_ndarry(matrix):
     except AttributeError as e:
         print(e)
 
-def get_data(arch, sz, bs):
-    tfms = tfms_from_model(arch, sz, aug_tfms=transforms_side_on, max_zoom=1.1)
-    data = ImageClassifierData.from_csv(PATH, 'train', f'{PATH}labels.csv', test_name='test', val_idxs=val_idxs, suffix='.jpg', tfms=tfms, bs=bs)
+def get_data(arch, wd, sz, X_train, Y_train, X_valid, Y_valid, test_df):
+    data = ImageClassifierData.from_arrays(path=wd,
+                                           trn=(X_train, Y_train),
+                                           val=(X_valid, Y_valid),
+                                           classes=Y_train,
+                                           test=test_df,
+                                           tfms=tfms_from_model(arch, sz))
+    return data
 
-
-def pgtrain_classification_fromScratch(learn, data, convg_tol, imgsz_sched=[]):
+def pgfit(learn,arch, PATH, data, bs, X_train, Y_train, X_valid, Y_valid, test_df, imgsz_sched=[] ):
 
     # define image size variation during training
     if len(imgsz_sched) == 0:
-        imgsz_sched = [0.25, 0.5, 0.75, 1] * data.shape[0]
-    else:
-        imgsz_sched = [ i*data.shape[0] for i in imgsz_sched]
+        imgsz_sched = [28] #  [4, 8, 16, 24, 28]
 
     # define differential learning rates
     lr = np.array([0.001, 0.0075, 0.01])
 
+    index = 0
+
+    sz = 14
+    # simply change data size for each training epoch
+
+    learn.set_data(get_data(arch, PATH, sz, X_train, Y_train, X_valid, Y_valid, test_df))
+    learn.freeze()
+    learn.fit(1e-2,1, cycle_len=1, cycle_mult=2)
+
+    # by default, [:-2] layers are all freezed initially
+    learn.unfreeze()
+
+    # find optimal learning rate
+    learn.fit(1e-2, 3, cycle_len=1, cycle_mult = 2)
+
+    sz = 28
+    # simply change data size for each training epoch
+
+    learn.set_data(get_data(arch, PATH, sz, X_train, Y_train, X_valid, Y_valid, test_df))
+    learn.freeze()
+    learn.fit(1e-2, 1, cycle_len=1, cycle_mult=2)
+
+    # by default, [:-2] layers are all freezed initially
+    learn.unfreeze()
+
+    # find optimal learning rate
+    learn.fit(lr, 3, cycle_len=1, cycle_mult = 2)
+
+    # plot loss vs. learning rate
+    # learn.sched.plot()
+
+
+def pgfit1(learn,arch, PATH, data, bs, X_train, Y_train, X_valid, Y_valid, test_df, imgsz_sched=[] ):
+
+    # define image size variation during training
+    if len(imgsz_sched) == 0:
+        imgsz_sched = [28] #  [4, 8, 16, 24, 28]
+
+    # define differential learning rates
+    lr = np.array([0.001, 0.0075, 0.01])
+
+    index = 0
     for sz in imgsz_sched:
         # simply change data size for each training epoch
-        learn.set_data(get_data(sz, bs))
+
+        learn.set_data(get_data(arch, PATH, sz, X_train, Y_train, X_valid, Y_valid, test_df))
 
         if index > 0:
             learn.fit(1e-2, 1,wd=wd)
@@ -66,10 +111,12 @@ def pgtrain_classification_fromScratch(learn, data, convg_tol, imgsz_sched=[]):
 
         # find optimal learning rate
         learn.lr_find()
-        learn.fit(lr, max_epochs, cycle_len=3, cycle_mult = 2)
+        learn.fit(lr, 3, cycle_len=3, cycle_mult = 2)
+
+        index  += 1
 
     # plot loss vs. learning rate
-    learn.sched.plot()
+    # learn.sched.plot()
 
 def predict_test_classification(learn):
     log_preds, y_test = learn.TTA(is_test=True)
@@ -125,17 +172,22 @@ preprocessed_data = [X_train, Y_train, X_valid, Y_valid, test_df]
 print([e.shape for e in preprocessed_data])
 print([type(e) for e in preprocessed_data])
 
+arch = resnet34
+imgsz_sched=[4, 8, 16, 24, 28]
+#imgsz_sched = []
+bs = 128
+PATH='/home/ubuntu/MNIST/'
 data = ImageClassifierData.from_arrays(path=wd,
                                        trn=(X_train, Y_train),
                                        val=(X_valid, Y_valid),
                                        classes=Y_train,
                                        test=test_df,
-                                       tfms=tfms_from_model(arch, sz))
+                                       tfms=tfms_from_model(arch, 14))
 
 
 learn = ConvLearner.pretrained(arch, data, precompute=True)
 
-pgtrain_classification_from_scratch(learn, data, imgsz_sched=[0.25, 0.5, 0.75, 1])
+pgfit(learn, arch, PATH, data, bs, X_train, Y_train, X_valid, Y_valid, test_df,imgsz_sched )
 
 predict_test_classification(learn)
 

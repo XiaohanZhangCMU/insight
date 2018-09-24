@@ -47,7 +47,8 @@ def get_augs():
 def binary_loss(y, p):
     return np.mean(-(y * np.log(p) + (1-y)*np.log(1-p)))
 
-PATH = "/Users/x/Downloads/GraphicsScratch/dogscats/"
+# PATH = "/Users/x/Downloads/GraphicsScratch/dogscats/"
+PATH = "/home/ubuntu/dogscats/"
 sz=224
 
 torch.cuda.is_available()
@@ -58,38 +59,67 @@ img = plt.imread(f'{PATH}valid/cats/{files[0]}')
 
 ''' Model and learning rate schedule
 '''
-arch=resnet34
 
 ''' Data augmentation
 '''
+sz = 112
 tfms = tfms_from_model(resnet34, sz, aug_tfms=transforms_side_on, max_zoom=1.1)
-ims = np.stack([get_augs() for i in range(6)])
-plots(ims, rows=2)
+#ims = np.stack([get_augs() for i in range(6)])
+#plots(ims, rows=2)
 data = ImageClassifierData.from_paths(PATH, tfms=tfms)
 
 # By default when we create a learner, it sets all but the last layer to *frozen*. That means that it's still only updating the weights in the last layer when we call `fit`.
 
-learn = ConvLearner.pretrained(arch, data, precompute=True)
+
+from fastai.models.cifar10.resnext import resnext29_8_64
+m = resnext29_8_64()
+bm = BasicModel(m.cuda(), name='cifar10_rn29_8_64')
+#arch=resnet34
+#learn = ConvLearner.pretrained(arch, data, precompute=True)
+learn = ConvLearner(data, bm)
+learn.unfreeze()
+
 lrf = learn.lr_find()
-learn.sched.plot()
+#learn.sched.plot()
 
-learn.fit(1e-2, 3, cycle_len=1)
-learn.sched.plot_lr()
-learn.save('/home/ubuntu/224_lastlayer')
-#learn.load('224_lastlayer')
-
-exit(0)
+wd = 5e-4
+learn.fit(lr, 1)
+learn.fit(lr, 2, cycle_len=1)
+learn.fit(lr, 3, cycle_len=1, cycle_mult=2, wds=wd)
+#learn.sched.plot_lr()
 
 ''' Now that final layer is trained, fine-tuning the other layers to unfreeze the remaining layers
 '''
-learn.unfreeze()
 
-lr=np.array([1e-4,1e-3,1e-2])
-learn.fit(lr, 3, cycle_len=1, cycle_mult=2)
-learn.sched.plot_lr()
+#learn.sched.plot_lr()
+learn.save('112_all')
 
-learn.save('224_all')
-#learn.load('224_all')
+if 0:
+    sz = 224
+    tfms = tfms_from_model(resnet34, sz, aug_tfms=transforms_side_on, max_zoom=1.1)
+    #ims = np.stack([get_augs() for i in range(6)])
+    #plots(ims, rows=2)
+    data = ImageClassifierData.from_paths(PATH, tfms=tfms)
+
+    learn.set_data(data)
+
+    lrf = learn.lr_find()
+    #learn.sched.plot()
+
+    learn.fit(1e-2, 1, cycle_len=1)
+    #learn.sched.plot_lr()
+    learn.save('224_lastlayer')
+    #learn.load('224_lastlayer')
+
+    ''' Now that final layer is trained, fine-tuning the other layers to unfreeze the remaining layers
+    '''
+    learn.unfreeze()
+
+    lr=np.array([1e-4,1e-3,1e-2])
+    learn.fit(lr, 1, cycle_len=1, cycle_mult=1)
+
+    learn.save('224_all')
+    #learn.load('224_all')
 
 ''' Make prediction with Test Time Augmentation
 '''
@@ -98,29 +128,33 @@ probs = np.mean(np.exp(log_preds),0)
 preds = np.argmax(probs, axis=1)
 accuracy_np(probs, y)
 
-''' Results visualiztion. confusion matrix etc
-'''
-cm = confusion_matrix(y, preds)
-plot_confusion_matrix(cm, data.classes)
 
-''' Randomly check correct/incorrect labels
-'''
-# 1. A few correct labels at random
-plot_val_with_title(rand_by_correct(True), "Correctly classified")
+learn.sched.plot_loss()
 
-# 2. A few incorrect labels at random
-plot_val_with_title(rand_by_correct(False), "Incorrectly classified")
+if 0:
+    ''' Results visualiztion. confusion matrix etc
+    '''
+    cm = confusion_matrix(y, preds)
+    plot_confusion_matrix(cm, data.classes)
 
-plot_val_with_title(most_by_correct(0, True), "Most correct cats")
+    ''' Randomly check correct/incorrect labels
+    '''
+    # 1. A few correct labels at random
+    plot_val_with_title(rand_by_correct(True), "Correctly classified")
 
-plot_val_with_title(most_by_correct(1, True), "Most correct dogs")
+    # 2. A few incorrect labels at random
+    plot_val_with_title(rand_by_correct(False), "Incorrectly classified")
 
-plot_val_with_title(most_by_correct(0, False), "Most incorrect cats")
+    plot_val_with_title(most_by_correct(0, True), "Most correct cats")
 
-plot_val_with_title(most_by_correct(1, False), "Most incorrect dogs")
+    plot_val_with_title(most_by_correct(1, True), "Most correct dogs")
 
-most_uncertain = np.argsort(np.abs(probs -0.5))[:4]
-plot_val_with_title(most_uncertain, "Most uncertain predictions")
+    plot_val_with_title(most_by_correct(0, False), "Most incorrect cats")
+
+    plot_val_with_title(most_by_correct(1, False), "Most incorrect dogs")
+
+    most_uncertain = np.argsort(np.abs(probs -0.5))[:4]
+    plot_val_with_title(most_uncertain, "Most uncertain predictions")
 
 
 
