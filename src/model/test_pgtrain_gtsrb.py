@@ -190,47 +190,83 @@ for i, row in classes.iterrows():
     class_names[str(row[0])] = row[1]
 
 arch = resnet34
-sz = 12 # 96
 bs = 256
 wd = 5e-4
+lr = 0.01
 
+imgsz_sched = [12, 24, 48, 72, 96]
+
+def pgfit(arch, data_path, bs, wd, imgsz_sched=[] ):
+
+    def get_data(sz):
+        aug_tfms = [RandomRotate(20), RandomLighting(0.8, 0.8)]
+        tfms = tfms_from_model(arch, sz, aug_tfms=aug_tfms, max_zoom=1.2)
+        data = ImageClassifierData.from_paths(data_path, tfms=tfms, trn_name='all', val_name='valid', test_name='test', bs=bs)
+        return data
+
+    for idx, sz in enumerate(imgsz_sched):
+        data = get_data(sz)
+
+        if idx == 0:
+            learn = ConvLearner.pretrained(arch, data, precompute=False)
+
+        learn.set_data(get_data(sz))
+        learn.freeze()
+        learn.fit(lr,1, cycle_len=1, cycle_mult=2)
+
+        learn.unfreeze()
+        learn.fit(lr, 3, cycle_len=1, cycle_mult = 2)
+
+        learn.save('learn_sz_'+str(sz)+'.pkl')
+
+    learn.sched.plot_loss()
+    return learn
+
+
+import datetime
+print(datetime.datetime.now())
+learn = pgfit(arch, path, bs, wd, imgsz_sched)
+print(datetime.datetime.now())
+
+''' For testing
+'''
+print("Below is for testing only")
+sz = 96
 aug_tfms = [RandomRotate(20), RandomLighting(0.8, 0.8)]
 tfms = tfms_from_model(arch, sz, aug_tfms=aug_tfms, max_zoom=1.2)
 data = ImageClassifierData.from_paths(path, tfms=tfms, trn_name='all', val_name='valid', test_name='test', bs=bs)
 
-learn = ConvLearner.pretrained(arch, data, precompute=False)
-lr=1e-2
-learn.lr_find()
-
-learn.fit(lr, 1, wds=wd)
-learn.unfreeze()
-learn.fit(lr, 3, wds=wd)
-learn.fit(lr, 4, cycle_len=1, cycle_mult=2, wds=wd)
-
-plot_loss_change(learn.sched, sma=20, n_skip=20, y_lim=(-0.01, 0.01))
-
+print("I am here 1")
 true_test_labels = {a.filename: a.label for a in test_annotations}
 class_indexes = {c: i for i, c in enumerate(data.classes)}
 filenames = [filepath[filepath.find('/') + 1:] for filepath in data.test_ds.fnames]
 labels = [str(true_test_labels[filename]) for filename in filenames]
 y_true = np.array([class_indexes[label] for label in labels])
 
+print("I am here 2")
+
 log_preds = learn.predict(is_test=True)
 preds = np.exp(log_preds)
 accuracy_np(preds, y_true)
 
+print("I am here 3")
 log_preds,_ = learn.TTA(n_aug=20, is_test=True)
+print("I am here 3.1")
 preds = np.mean(np.exp(log_preds),0)
+print("I am here 3.2")
 accuracy_np(preds, y_true)
+print("I am here 3.3")
 pred_labels = np.argmax(preds, axis=1)
 incorrect = [i for i in range(len(pred_labels)) if pred_labels[i] != y_true[i]]
+print("I am here 4")
 
 for i in range(0,10):
     print(class_names[data.classes[y_true[incorrect[i]]]], class_names[data.classes[pred_labels[incorrect[i]]]],
           preds[incorrect[i], y_true[incorrect[i]]], preds[incorrect[i], pred_labels[incorrect[i]]])
     plt.imshow(load_img_id(data.test_ds, incorrect[i], path))
-    plt.show()
+    plt.savefig('showoff1'+str(i)+'.png')
 
+print("I am here 5")
 cm = confusion_matrix(y_true, pred_labels)
 np.savetxt(os.path.join(path, 'confusion_matrix.tsv'), cm, delimiter='\t')
 c = Counter([class_names[data.classes[y_true[i]]] for i in incorrect])
@@ -240,10 +276,11 @@ c.most_common(20)
 
 pred_labels = np.argmax(preds, axis=1)
 
+print("I am here 6")
 for i in range(10):
     class_id = data.classes[pred_labels[i]]
     filename = data.test_ds.fnames[i].split('/')[1]
     print(filename, class_id, class_names[class_id])
     plt.imshow(load_img_id(data.test_ds, i, path))
-    plt.show()
+    plt.savefig('showoff'+str(i)+'.png')
 
