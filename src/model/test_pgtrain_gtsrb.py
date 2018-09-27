@@ -194,9 +194,12 @@ bs = 256
 wd = 5e-4
 lr = 0.01
 
-imgsz_sched = [12, 24, 48, 72, 96]
+# imgsz_sched = [12, 24, 48, 72, 96]
+imgsz_sched = [96, 96, 96, 96, 96]
 
 def pgfit(arch, data_path, bs, wd, imgsz_sched=[] ):
+
+    pretrained = False
 
     def get_data(sz):
         aug_tfms = [RandomRotate(20), RandomLighting(0.8, 0.8)]
@@ -207,8 +210,15 @@ def pgfit(arch, data_path, bs, wd, imgsz_sched=[] ):
     for idx, sz in enumerate(imgsz_sched):
         data = get_data(sz)
 
-        if idx == 0:
+        if idx == 0 and pretrained:
             learn = ConvLearner.pretrained(arch, data, precompute=False)
+
+        if idx == 0 and (not pretrained):
+            #from fastai.models.cifar10.resnext import resnext29_8_64
+            from fastai.models.resnet import vgg_resnet34
+            m = vgg_resnet34()
+            bm = BasicModel(m.cuda(), name='vgg_resnet34')
+            learn = ConvLearner(data, bm)
 
         learn.set_data(get_data(sz))
         learn.freeze()
@@ -224,9 +234,15 @@ def pgfit(arch, data_path, bs, wd, imgsz_sched=[] ):
 
 
 import datetime
-print(datetime.datetime.now())
+fh =  open('log.txt', 'w')
+print(str(datetime.datetime.now()))
+fh.write(str(datetime.datetime.now()))
+
 learn = pgfit(arch, path, bs, wd, imgsz_sched)
-print(datetime.datetime.now())
+
+print(str(datetime.datetime.now()))
+fh.write(str(datetime.datetime.now()))
+fh.close()
 
 ''' For testing
 '''
