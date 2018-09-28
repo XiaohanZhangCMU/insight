@@ -3,7 +3,6 @@ import numpy as np
 import random
 random.seed(1234)
 
-
 import glob
 import h5py
 import os
@@ -11,7 +10,6 @@ import numpy as np
 from skimage import io, color, exposure, transform
 
 NUM_CLASSES = 43
-
 
 def preprocess_img(img, img_size):
     # Histogram normalization in y
@@ -63,28 +61,27 @@ def create_h5(root_dir, h5_fname='X.h5', IMG_SIZE=48):
         hf.create_dataset('labels', data=Y)
     return (X,Y)
 
-def read_gtsrb_dataset(test_prop = 0.2):
-    imag_sched = [48]
-    for IMG_SIZE in imag_sched:
-        try:
-            with  h5py.File('X.h5.'+str(IMG_SIZE)) as hf:
-                X, Y = hf['imgs'][:], hf['labels'][:]
-            print("Loaded images from X.h5."+str(IMG_SIZE))
+def read_gtsrb_dataset(test_prop = 0.2, IMG_SIZE=48):
+    X, Y, X_val, Y_val = [], [], [], []
+    try:
+        with  h5py.File('X.h5.'+str(IMG_SIZE)) as hf:
+            X, Y = hf['imgs'][:], hf['labels'][:]
+        print("Loaded images from X.h5."+str(IMG_SIZE))
 
-        except (IOError,OSError, KeyError):
-            print("Error in reading X.h5.IMG_SIZE Processing all images...")
-            root_dir = '/home/ubuntu/datasets/GTSRB/train/'
-            X, Y = create_h5(root_dir, h5_fname = 'X.h5.'+str(IMG_SIZE), IMG_SIZE=IMG_SIZE)
+    except (IOError,OSError, KeyError):
+        print("Error in reading X.h5.IMG_SIZE Processing all images...")
+        root_dir = '/home/ubuntu/datasets/GTSRB/train/'
+        X, Y = create_h5(root_dir, h5_fname = 'X.h5.'+str(IMG_SIZE), IMG_SIZE=IMG_SIZE)
 
-        try:
-            with  h5py.File('X_val.h5.'+str(IMG_SIZE)) as hf:
-                X_val, Y_val = hf['imgs'][:], hf['labels'][:]
-            print("Loaded images from X_val.h5."+str(IMG_SIZE))
+    try:
+        with  h5py.File('X_val.h5.'+str(IMG_SIZE)) as hf:
+            X_val, Y_val = hf['imgs'][:], hf['labels'][:]
+        print("Loaded images from X_val.h5."+str(IMG_SIZE))
 
-        except (IOError,OSError, KeyError):
-            print("Error in reading X_val.h5.IMG_SIZE Processing all images...")
-            root_dir = '/home/ubuntu/datasets/GTSRB/valid/'
-            create_h5(root_dir, h5_fname = 'X_val.h5.'+str(IMG_SIZE), IMG_SIZE=IMG_SIZE)
+    except (IOError,OSError, KeyError):
+        print("Error in reading X_val.h5.IMG_SIZE Processing all images...")
+        root_dir = '/home/ubuntu/datasets/GTSRB/valid/'
+        X_val, Y_val = create_h5(root_dir, h5_fname = 'X_val.h5.'+str(IMG_SIZE), IMG_SIZE=IMG_SIZE)
 
     import pandas as pd
     test = pd.read_csv('/home/ubuntu/datasets/GTSRB/GT-final_test.csv',sep=';')

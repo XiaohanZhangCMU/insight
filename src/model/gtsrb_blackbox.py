@@ -24,7 +24,8 @@ from cleverhans.model import Model
 from cleverhans.utils_mnist import data_mnist
 from cleverhans.utils import to_categorical
 from cleverhans.utils import set_log_level
-from cleverhans.utils_tf import train, model_eval # , batch_eval
+from cleverhans.utils_tf import model_eval # train, batch_eval
+from cleverhans.train import train
 from cleverhans.attacks import FastGradientMethod
 from cleverhans.attacks_tf import jacobian_graph, jacobian_augmentation
 from cleverhans.evaluation import batch_eval
@@ -43,7 +44,7 @@ FLAGS = flags.FLAGS
 
 NB_CLASSES = 43
 BATCH_SIZE = 128
-LEARNING_RATE = .001
+LEARNING_RATE = .1
 NB_EPOCHS = 30
 HOLDOUT = 150 # This number needs to be smaller than len(x_test)
 DATA_AUG = 6
@@ -63,6 +64,11 @@ def setup_tutorial():
     tf.set_random_seed(1234)
 
     return True
+
+def add_gaussian_noise(img,mean=0.0, std=1e-3):
+    noisy_img = img + np.random.normal(mean, std, img.shape)
+    noisy_img_clipped = np.clip(noisy_img, 0, 1)  # might get out of bounds due to noise
+    return noisy_img_clipped
 
 
 def prep_bbox(sess, x, y, x_train, y_train, x_test, y_test,
@@ -89,10 +95,12 @@ def prep_bbox(sess, x, y, x_train, y_train, x_test, y_test,
     # sess = tf.InteractiveSession(config=config)
     keras.backend.set_session(sess)
 
-    # Define TF model graph (for the black-box model)
-    # nb_filters = 64
-    #model = ModelBasicCNN('model1', nb_classes, nb_filters)
-    oracle = KerasModelWrapper(load_model('model.h5'))
+    try:
+        oracle = KerasModelWrapper(load_model('model.nopg.h5'))
+    except:
+        import errno, os
+        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), 'model.nopg.h5')
+
     loss = CrossEntropy(oracle, smoothing=0.1)
     predictions = oracle.get_logits(x)
     print("Loaded well-trained Keras oracle.")
@@ -155,7 +163,7 @@ class ModelSubstitute(Model):
         with self.session.as_default():
             with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
                 self.session.run(tf.global_variables_initializer())
-                self.session.run(tf.initialize_all_variables())
+#                self.session.run(tf.initialize_all_variables())
                 conv = tf.nn.conv2d(input=x, filter=self.c1, strides=[1,1,1,1], padding='SAME', data_format='NCHW')
                 conv = tf.nn.relu(conv + self.b1)
                 maxp = tf.nn.max_pool(conv, ksize=[1,1,2,2], strides=[1,1,2,2], padding='SAME', data_format='NCHW')
@@ -185,8 +193,8 @@ class ModelSubstitute(Model):
 
 def train_sub(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
               nb_epochs_s, batch_size, learning_rate, data_aug, lmbda,
-              aug_batch_size, rng, img_rows=28, img_cols=28,
-              nchannels=1):
+              aug_batch_size, rng, img_rows=48, img_cols=48,
+              nchannels=3):
     """
     This function creates the substitute by alternatively
     augmenting the training data and training the substitute.
@@ -224,9 +232,12 @@ def train_sub(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
             'learning_rate': learning_rate
         }
         with TemporaryLogLevel(logging.WARNING, "cleverhans.utils.tf"):
-            train(sess, loss_sub, x, y, x_sub,
-                  to_categorical(y_sub, nb_classes),
-                  init_all=False, args=train_params, rng=rng,
+    #        train(sess, loss_sub, x, y, x_sub,
+    #              to_categorical(y_sub, nb_classes),
+    #              init_all=False, args=train_params, rng=rng,
+    #              var_list=model_sub.get_params())
+            train(sess, loss_sub, x_sub, y_sub,
+                  init_all=True, args=train_params, rng=rng,
                   var_list=model_sub.get_params())
 
         # If we are not at last substitute training iteration, augment dataset
@@ -244,7 +255,7 @@ def train_sub(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
             eval_params = {'batch_size': batch_size}
             #tmp = batch_eval(sess, [x], [bbox_preds], [x_sub_prev],args=eval_params)
             tmp = batch_eval(sess, [x], [bbox_preds], [x_sub_prev],batch_size=batch_size)
-            print(tmp)
+            #print(tmp)
             bbox_val = tmp[0]
 
             # Note here that we take the argmax because the adversary
@@ -305,26 +316,36 @@ def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
     y_test = y_test[holdout:]
 
     # Obtain Image parameters
-    img_rows, img_cols, nchannels = x_train.shape[1:4]
+    nchannels, img_rows, img_cols = x_train.shape[1:4]
     nb_classes = y_train.shape[1]
 
     # Define input TF placeholder
-    x = tf.placeholder(tf.float32, shape=(None, img_rows, img_cols,
-                                          nchannels))
-    y = tf.placeholder(tf.float32, shape=(None,     nb_classes))
+    x = tf.placeholder(tf.float32, shape=(None, nchannels, img_rows, img_cols))
+    y = tf.placeholder(tf.float32, shape=(None, nb_classes))
 
     # Seed random number generator so tutorial is reproducible
     rng = np.random.RandomState([2017, 8, 30])
 
     # Simulate the black-box model locally
-    # You could replace this by a remote labeling API for instance
-    print("Preparing the black-box model.")
+    print("Loading the black-box model.")
     t1 = time.time()
     prep_bbox_out = prep_bbox(sess, x, y, x_train, y_train, x_test, y_test,
                               nb_epochs, batch_size, learning_rate,
                               rng, nb_classes, img_rows, img_cols, nchannels)
     model, bbox_preds, accuracies['bbox'] = prep_bbox_out
     print('Oracle loading time :', time.time()-t1, 'seconds')
+
+    # Evaluate oracle on random noised test samples
+    rand_x_test, rand_y_test = [], y_test
+    try:
+        rand_x_test = np.load('rand_x_test.npy')
+    except:
+        for itest in range(len(x_test)):
+            rand_x_test.append(add_gaussian_noise(x_test[itest], std=0.1))
+        rand_x_test = np.array(rand_x_test)
+    eval_params = {'batch_size': batch_size}
+    acc = model_eval(sess, x, y, bbox_preds, rand_x_test, rand_y_test, args=eval_params)
+    accuracies['oracle on noise'] = acc
 
     # Train substitute using method from https://arxiv.org/abs/1602.02697
     print("Training the substitute model.")
@@ -340,6 +361,8 @@ def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
     eval_params = {'batch_size': batch_size}
     acc = model_eval(sess, x, y, preds_sub, x_test, y_test, args=eval_params)
     accuracies['sub'] = acc
+    print('sub on clean test {0}'.format(acc))
+    exit(0)
 
     # Initialize the Fast Gradient Sign Method (FGSM) attack object.
     fgsm_par = {'eps': 0.3, 'ord': np.inf, 'clip_min': 0., 'clip_max': 1.}
@@ -350,7 +373,6 @@ def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
     eval_params = {'batch_size': batch_size}
     x_adv_sub = fgsm.generate(x, **fgsm_par)
     print('Adversarial example crafting time :', time.time()-t1, 'seconds')
-
 
     # Evaluate the accuracy of the "black-box" model on adversarial examples
     accuracy = model_eval(sess, x, y, model.get_logits(x_adv_sub),
@@ -368,6 +390,8 @@ def main(argv=None):
                    nb_epochs=FLAGS.nb_epochs, holdout=FLAGS.holdout,
                    data_aug=FLAGS.data_aug, nb_epochs_s=FLAGS.nb_epochs_s,
                    lmbda=FLAGS.lmbda, aug_batch_size=FLAGS.data_aug_batch_size)
+
+    print('Statistics of attacking : {0}'.format(time.time()))
 
     for key, val in metrics.items():
         print('acc of {0} is : {1}\n'.format(key,val))
