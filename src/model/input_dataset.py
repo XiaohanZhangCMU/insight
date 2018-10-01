@@ -94,7 +94,7 @@ def read_gtsrb_dataset(test_prop = 0.2, IMG_SIZE=48):
         X_test.append(preprocess_img(io.imread(img_path), 48))
         Y_test.append(class_id)
         i+=1
-        if i >800:
+        if i >(1<<13):
             break # temporary to reduce run time
 
     X_test = np.array(X_test)
