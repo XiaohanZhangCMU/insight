@@ -62,9 +62,9 @@ def lr_schedule(epoch):
     return lr*(0.1**int(epoch/10))
 
 batch_size = 32
-nb_epoch = 5
+nb_epoch = 20
 model = cnn_model()
-imag_sched = [24, 36, 48];
+imag_sched = [24, 36];
 
 for IMG_SIZE in imag_sched:
     X, Y, X_val, Y_val, X_test, Y_test = read_gtsrb_dataset(IMG_SIZE=IMG_SIZE)
@@ -80,11 +80,11 @@ for IMG_SIZE in imag_sched:
               validation_data=(X_val, Y_val),
               shuffle=True,
               callbacks=[LearningRateScheduler(lr_schedule),
-                        ModelCheckpoint('model.h5',save_best_only=True)]
+                        ModelCheckpoint('model.pg.h5.'+str(IMG_SIZE),save_best_only=True)]
                 )
 
 Y_pred = np.argmax(model.predict(X_test), axis=1)
-acc = np.sum(y_pred==np.argmax(Y_test,axis=1))/np.size(Y_pred)
+acc = np.sum(Y_pred==np.argmax(Y_test,axis=1))/np.size(Y_pred)
 print("Test accuracy = {}".format(acc))
 
 
