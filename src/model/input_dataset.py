@@ -69,7 +69,7 @@ def read_gtsrb_dataset(test_prop = 0.2, IMG_SIZE=48):
         print("Loaded images from X.h5."+str(IMG_SIZE))
 
     except (IOError,OSError, KeyError):
-        print("Error in reading X.h5.IMG_SIZE Processing all images...")
+        print("Error in reading X.h5."+str(IMG_SIZE)+" Processing all images...")
         root_dir = '/home/ubuntu/datasets/GTSRB/train/'
         X, Y = create_h5(root_dir, h5_fname = 'X.h5.'+str(IMG_SIZE), IMG_SIZE=IMG_SIZE)
 
@@ -79,7 +79,7 @@ def read_gtsrb_dataset(test_prop = 0.2, IMG_SIZE=48):
         print("Loaded images from X_val.h5."+str(IMG_SIZE))
 
     except (IOError,OSError, KeyError):
-        print("Error in reading X_val.h5.IMG_SIZE Processing all images...")
+        print("Error in reading X_val.h5."+str(IMG_SIZE)+" Processing all images...")
         root_dir = '/home/ubuntu/datasets/GTSRB/valid/'
         X_val, Y_val = create_h5(root_dir, h5_fname = 'X_val.h5.'+str(IMG_SIZE), IMG_SIZE=IMG_SIZE)
 
