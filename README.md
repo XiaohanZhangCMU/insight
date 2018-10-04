@@ -21,6 +21,7 @@ Clone repository and update python path
 git clone git@github.com:XiaohanZhangCMU/insight.git
 cd insight
 pip install joblib
+pip install scikit-image
 git clone https://github.com/tensorflow/cleverhans
 pip install -e ./cleverhans
 
