@@ -4,11 +4,26 @@
 - **training** : Progressively growing image resolution during training. Faster convergence? Better stability? Higher accuracy?
 - **adversarial attack** : Training with coarse images help nn to stuck with local minimum. Thus prevent adversarial example attack?
 
-## Setup
+## Prerequisite
+tensorflow
+keras
+gpu
+cleverhans
+
+```
+conda install -c anaconda tensorflow-gpu 
+conda install keras
+```
+
+## Install
 Clone repository and update python path
 ```
 git clone git@github.com:XiaohanZhangCMU/insight.git
 cd insight
+pip install joblib
+git clone https://github.com/tensorflow/cleverhans
+pip install -e ./cleverhans
+
 ```
 
 ## Configs
