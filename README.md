@@ -24,7 +24,7 @@ pip install joblib
 pip install scikit-image
 git clone https://github.com/tensorflow/cleverhans
 pip install -e ./cleverhans
-
+pip install sklearn
 ```
 
 ## Configs
