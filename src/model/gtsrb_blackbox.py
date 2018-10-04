@@ -16,6 +16,7 @@ import numpy as np
 from six.moves import xrange
 
 import logging
+import pickle
 import tensorflow as tf
 from tensorflow.python.platform import flags
 
@@ -52,6 +53,7 @@ NB_EPOCHS_S = 5
 LMBDA = .1
 AUG_BATCH_SIZE = 512
 IMG_SIZE = 48
+MODEL_PATH = './pg_train_results/model.pg.h5.48'
 
 
 def setup_tutorial():
@@ -95,11 +97,12 @@ def prep_bbox(sess, x, y, x_train, y_train, x_test, y_test,
     # sess = tf.InteractiveSession(config=config)
     keras.backend.set_session(sess)
 
+    model_path = MODEL_PATH
     try:
-        oracle = KerasModelWrapper(load_model('model.nopg.h5'))
+        oracle = KerasModelWrapper(load_model(model_path))
     except:
         import errno, os
-        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), 'model.nopg.h5')
+        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), model_path)
 
     loss = CrossEntropy(oracle, smoothing=0.1)
     predictions = oracle.get_logits(x)
@@ -769,7 +772,7 @@ def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
     # Train substitute using method from https://arxiv.org/abs/1602.02697
     print("Training the substitute model.")
     t1 = time.time()
-    train_sub_out = train_sub(sess, x, y, bbox_preds, x_train, y_train,
+    train_sub_out = train_sub1(sess, x, y, bbox_preds, x_train, y_train,
                               nb_classes, nb_epochs_s, batch_size,
                               learning_rate, data_aug, lmbda, aug_batch_size,
                               rng, img_rows, img_cols, nchannels)
@@ -811,6 +814,13 @@ def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
           'using the substitute: ' + str(accuracy))
     accuracies['bbox_on_sub_adv_ex'] = accuracy
 
+
+    # Visualize one example:
+    x_adv_sub_0  = x_adv_sub.eval(feed_dict = {x:x_test[0]})
+    print('ONE EXMAPLE: shape = {0}'.format(x_adv_sub_0.shape))
+    print('symbolic x_adv_sub: shape = {0}'.format(x_adv_sub.shape))
+
+
     return accuracies
 
 
@@ -850,5 +860,6 @@ if __name__ == '__main__':
     flags.DEFINE_float('lmbda', LMBDA, 'Lambda from arxiv.org/abs/1602.02697')
     flags.DEFINE_integer('data_aug_batch_size', AUG_BATCH_SIZE,
                          'Batch size for augmentation')
+    flags.DEFINE_string('model_path', MODEL_PATH, 'model to run')
 
     tf.app.run()
