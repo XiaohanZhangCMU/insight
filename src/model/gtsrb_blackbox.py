@@ -23,9 +23,12 @@ from tensorflow.python.platform import flags
 from cleverhans.loss import CrossEntropy
 from cleverhans.model import Model
 from cleverhans.utils_mnist import data_mnist
+from cleverhans.utils import other_classes, set_log_level
 from cleverhans.utils import to_categorical
 from cleverhans.utils import set_log_level
+from cleverhans.utils import pair_visual, grid_visual, AccuracyReport
 from cleverhans.utils_tf import model_eval, train # batch_eval
+from cleverhans.utils_tf import model_argmax
 #from cleverhans.train import train
 from cleverhans.attacks import FastGradientMethod
 from cleverhans.attacks_tf import jacobian_graph, jacobian_augmentation
@@ -48,8 +51,8 @@ BATCH_SIZE = 128
 LEARNING_RATE = .1
 NB_EPOCHS = 30
 HOLDOUT = 1<<10 # This number needs to be smaller than len(x_test)
-DATA_AUG = 1<<5
-NB_EPOCHS_S = 5
+DATA_AUG = 1 # <<5
+NB_EPOCHS_S = 1 # 15 #
 LMBDA = .1
 AUG_BATCH_SIZE = 512
 IMG_SIZE = 48
@@ -146,26 +149,10 @@ class ModelSubstitute(Model):
 
             self.istrain = istrain
 
-
-
-    #def fprop(self, x, **kwargs):
-    #    del kwargs
-    #    my_dense = functools.partial(
-    #        tf.layers.dense, kernel_initializer=HeReLuNormalInitializer)
-    #    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-    #        y = tf.layers.flatten(x)
-    #        y = my_dense(y, self.nb_filters, activation=tf.nn.relu)
-    #        y = my_dense(y, self.nb_filters, activation=tf.nn.relu)
-    #        logits = my_dense(y, self.nb_classes)
-    #        return {self.O_LOGITS: logits,
-    #                self.O_PROBS: tf.nn.softmax(logits=logits)}
-
     def fprop(self, x, **kwargs):
         del kwargs
         #with self.session.as_default():
         with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-#            self.session.run(tf.global_variables_initializer())
-#            self.session.run(tf.initialize_all_variables())
             conv = tf.nn.conv2d(input=x, filter=self.c1, strides=[1,1,1,1], padding='SAME', data_format='NCHW')
             conv = tf.nn.relu(conv + self.b1)
             maxp = tf.nn.max_pool(conv, ksize=[1,1,2,2], strides=[1,1,2,2], padding='SAME', data_format='NCHW')
@@ -192,181 +179,6 @@ class ModelSubstitute(Model):
 
             return {self.O_LOGITS: logits,
                     self.O_PROBS: tf.nn.softmax(logits=logits)}
-
-
-def test_train_sub2(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
-              nb_epochs_s, batch_size, learning_rate, data_aug, lmbda,
-              aug_batch_size, rng, img_rows=48, img_cols=48,
-              nchannels=3):
-
-    model_sub = ModelSubstitute('model_s',nb_classes, session=sess, istrain=True)
-
-    logits = model_sub.get_logits(x)
-    prob = tf.sigmoid(logits)
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y))
-    optimiser = tf.train.AdamOptimizer().minimize(loss)
-    #val_predictions = tf.nn.softmax(cnn_model(val_x))
-    train_predictions = tf.nn.softmax(logits=logits)
-    #y_pred_cls = tf.argmax(cnn_model(x), axis=1)
-
-    sess.run(tf.global_variables_initializer())
-
-    epochs = 10
-    _BATCH_SIZE = 128
-    for epoch in range(epochs):
-        for s in range(batch_size):
-            batch_xs = x_sub[s*_BATCH_SIZE: (s+1)*_BATCH_SIZE]
-            batch_ys = y_sub[s*_BATCH_SIZE: (s+1)*_BATCH_SIZE]
-#            train_step.run(feed_dict={x:batch_xs, y:batch_ys})
-            #optimiser.run(feed_dict={x:batch_xs, y:batch_ys})
-            feed_dict = {x:batch_xs, y:batch_ys}
-            op, lval,pre = sess.run([optimiser, loss, train_predictions], feed_dict=feed_dict)
-
-        print('epoch = {0}'.format(epoch))
-
-    return model_sub, train_predictions #y_pred_cls
-
-
-def test_train_sub(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
-              nb_epochs_s, batch_size, learning_rate, data_aug, lmbda,
-              aug_batch_size, rng, img_rows=48, img_cols=48,
-              nchannels=3):
-    c1 = tf.Variable(tf.truncated_normal(shape=[3,3,3,32], stddev=0.1))
-    b1 = tf.Variable(tf.constant(1.0, shape=[32, 48,48]))
-    c2 = tf.Variable(tf.truncated_normal(shape=[3,3,32,64], stddev=0.1))
-    b2 = tf.Variable(tf.constant(1.0, shape=[64,24,24]))
-    c3 = tf.Variable(tf.truncated_normal(shape=[2,2,64,128], stddev=0.1))
-    b3 = tf.Variable(tf.constant(1.0, shape=[128,12,12]))
-
-    #w1 = tf.Variable(tf.truncated_normal(shape=[7*7*128, 1024], stddev=0.1))
-    #b4 = tf.Variable(tf.constant(0.0, shape=[1024]))
-
-    w1 = tf.Variable(tf.truncated_normal(shape=[6*6*128, 2048], stddev=0.1))
-    b4 = tf.Variable(tf.constant(0.0, shape=[2048]))
-    w2 = tf.Variable(tf.truncated_normal(shape=[2048, 1024], stddev=0.1))
-    b5 = tf.Variable(tf.constant(0.0, shape=[1024]))
-
-    w3 = tf.Variable(tf.truncated_normal(shape=[1024,43], stddev=0.1))
-    b6 = tf.Variable(tf.constant(0.0, shape=[43]))
-
-
-    def cnn_model(x, istrain=False):
-    # Conv+Max Pool (52,52,3) -> (26,26,32)
-        conv = tf.nn.conv2d(input=x, filter=c1, strides=[1,1,1,1], padding='SAME', data_format='NCHW')
-        conv = tf.nn.relu(conv + b1)
-        maxp = tf.nn.max_pool(conv, ksize=[1,1,2,2], strides=[1,1,2,2], padding='SAME', data_format='NCHW')
-
-        # Conv+Max Pool (26,26,32) -> (13, 13, 64)
-        conv2 = tf.nn.conv2d(input=maxp, filter=c2, strides=[1,1,1,1], padding='SAME', data_format='NCHW')
-        conv2 = tf.nn.relu(conv2 + b2)
-        maxp2 = tf.nn.max_pool(conv2, ksize=[1,1,2,2], strides=[1,1,2,2], padding='SAME', data_format='NCHW')
-
-        # Conv+Max Pool (13, 13, 64) -> (7,7,128)
-        conv3 = tf.nn.conv2d(input=maxp2, filter=c3, strides=[1,1,1,1], padding='SAME', data_format='NCHW')
-        conv3 = tf.nn.relu(conv3 + b3)
-        maxp3 = tf.nn.max_pool(conv3, ksize=[1,1,2,2], strides=[1,1,2,2], padding='SAME', data_format='NCHW')
-        maxp3 = tf.reshape(maxp3, shape=[-1, 6*6*128])
-
-        # Dense Layers
-        dl = tf.nn.relu(tf.matmul(maxp3, w1)+b4)
-        if istrain:
-            dl = tf.nn.dropout(dl, 0.5)
-        dl2 = tf.nn.relu(tf.matmul(dl, w2)+b5)
-        if istrain:
-            dl2 = tf.nn.dropout(dl2,0.5)
-        dl3 = tf.matmul(dl2, w3) + b6
-        return dl3
-
-    logits = cnn_model(x, True)
-    prob = tf.sigmoid(logits)
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y))
-    optimiser = tf.train.AdamOptimizer().minimize(loss)
-    #val_predictions = tf.nn.softmax(cnn_model(val_x))
-    train_predictions = tf.nn.softmax(logits=logits)
-    y_pred_cls = tf.argmax(cnn_model(x), axis=1)
-
-    sess.run(tf.global_variables_initializer())
-
-    epochs = 10
-    _BATCH_SIZE = 128
-    for epoch in range(epochs):
-        for s in range(batch_size):
-            batch_xs = x_sub[s*_BATCH_SIZE: (s+1)*_BATCH_SIZE]
-            batch_ys = y_sub[s*_BATCH_SIZE: (s+1)*_BATCH_SIZE]
-#            train_step.run(feed_dict={x:batch_xs, y:batch_ys})
-            #optimiser.run(feed_dict={x:batch_xs, y:batch_ys})
-            feed_dict = {x:batch_xs, y:batch_ys}
-            op, lval,pre = sess.run([optimiser, loss, train_predictions], feed_dict=feed_dict)
-
-        print('epoch = {0}'.format(epoch))
-        print("loss :", sess.run(loss, feed_dict={x:batch_xs, y:batch_ys}))
-
-    return train_predictions #y_pred_cls
-
-
-
-def test_train_sub1(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
-              nb_epochs_s, batch_size, learning_rate, data_aug, lmbda,
-              aug_batch_size, rng, img_rows=48, img_cols=48,
-              nchannels=3):
-
-    if 1:
-        model_sub = ModelSubstitute('model_s',nb_classes, session=sess, istrain=True)
-        preds_sub = model_sub.get_logits(x)
-        loss_sub = CrossEntropy(model_sub, smoothing=0)
-        logits = model_sub(x)
-        #loss_sub = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=preds_sub, labels=y))
-
-        print("Defined TensorFlow model graph for the substitute.")
-
-        # Define the Jacobian symbolically using TensorFlow
-        train_params = {
-            'nb_epochs': nb_epochs_s,
-            'batch_size': batch_size,
-            'learning_rate': learning_rate
-        }
-        print(x_sub.shape)
-        print(y_sub.shape)
-        sess.run(tf.global_variables_initializer())
-        rng = np.random.RandomState([2017, 8, 30])
-        #train(sess, loss_sub, x, y, x_sub, y_sub, args=train_params,rng=rng)
-
-
-        #with TemporaryLogLevel(logging.WARNING, "cleverhans.utils.tf"):
-        train(sess, loss_sub, x, y, x_sub,
-              to_categorical(y_sub, nb_classes),
-              args=train_params, rng=rng)
-              #init_all=False, args=train_params, rng=rng,
-              #var_list=model_sub.get_params())
-        #train(sess, loss_sub, x_sub, y_sub,
-        #      init_all=True, args=train_params, rng=rng)
-        #,
-        #      var_list=model_sub.get_params())
-
-    if 0:
-        nb_filters = 64
-        model_sub = ModelBasicCNN('model1', nb_classes, nb_filters)
-        preds_sub = model_sub.get_logits(x)
-        loss_sub = CrossEntropy(model_sub, smoothing=0)
-
-        eval_params = {'batch_size': batch_size}
-        def evaluate():
-            acc = model_eval(sess, x, y, preds_sub, x_sub, y_sub, args=eval_params)
-            print('Test accuracy on test examples: %0.4f' % (acc))
-
-        train_params = {
-            'nb_epochs': nb_epochs_s,
-            'batch_size': batch_size,
-            'learning_rate': learning_rate
-        }
-        rng = np.random.RandomState([2017, 8, 8, 30])
-
-        print(x_sub.shape)
-        print(y_sub.shape)
-        train(sess, loss_sub, x, y, x_sub, y_sub, evaluate=evaluate,
-              args=train_params, rng=rng, var_list=model_sub.get_params())
-
-    return model_sub, preds_sub
 
 def train_sub1(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
               nb_epochs_s, batch_size, learning_rate, data_aug, lmbda,
@@ -420,6 +232,10 @@ def train_sub1(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
             print("Augmenting substitute training data.")
             # Perform the Jacobian augmentation
             lmbda_coef = 2 * int(int(rho / 3) != 0) - 1
+            # print(x.shape)
+            # print(x_sub.shape)
+            # print(y_sub.shape)
+            #print(grads.shape)
             x_sub = jacobian_augmentation(sess, x, x_sub, y_sub, grads,
                                           lmbda_coef * lmbda, aug_batch_size)
 
@@ -439,127 +255,6 @@ def train_sub1(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
             y_sub[int(len(x_sub)/2):] = np.argmax(bbox_val, axis=1)
 
     return model_sub, preds_sub
-
-
-def train_sub2(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
-              nb_epochs_s, batch_size, learning_rate, data_aug, lmbda,
-              aug_batch_size, rng, img_rows=48, img_cols=48,
-              nchannels=3):
-    """
-    This function creates the substitute by alternatively
-    augmenting the training data and training the substitute.
-    :param sess: TF session
-    :param x: input TF placeholder
-    :param y: output TF placeholder
-    :param bbox_preds: output of black-box model predictions
-    :param x_sub: initial substitute training data
-    :param y_sub: initial substitute training labels
-    :param nb_classes: number of output classes
-    :param nb_epochs_s: number of epochs to train substitute model
-    :param batch_size: size of training batches
-    :param learning_rate: learning rate for training
-    :param data_aug: number of times substitute training data is augmented
-    :param lmbda: lambda from arxiv.org/abs/1602.02697
-    :param rng: numpy.random.RandomState instance
-    :return:
-    """
-    # Define TF model graph (for the black-box model)
-    model_sub = ModelSubstitute('model_s',nb_classes, session=sess, istrain=True)
-    #preds_sub = model_sub.get_logits(x)
-    logits = model_sub.get_logits(x)
-    #loss_sub = CrossEntropy(model_sub, smoothing=0)
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y))
-    optimiser = tf.train.AdamOptimizer().minimize(loss)
-    preds_sub = tf.nn.softmax(logits=logits)
-
-    print("Defined TensorFlow model graph for the substitute.")
-
-    # Define the Jacobian symbolically using TensorFlow
-    grads = jacobian_graph(preds_sub, x, nb_classes)
-
-    sess.run(tf.global_variables_initializer())
-
-    def evaluate():
-        acc = model_eval(sess, x, y, preds_sub, x_sub, to_categorical(y_sub,nb_classes), args=eval_params)
-        print('Test accuracy on test examples: %0.4f' % (acc))
-
-    # Train the substitute and augment dataset alternatively
-    for rho in xrange(data_aug):
-        print("Substitute training epoch #" + str(rho))
-        #train_params = {
-        #    'nb_epochs': nb_epochs_s,
-        #    'batch_size': batch_size,
-        #    'learning_rate': learning_rate
-        #}
-    #    with TemporaryLogLevel(logging.WARNING, "cleverhans.utils.tf"):
-    #        train(sess, loss_sub, x, y, x_sub,
-    #              to_categorical(y_sub, nb_classes),
-    #              init_all=False, args=train_params, rng=rng,
-    #              var_list=model_sub.get_params())
-    #        train(sess, loss_sub, x_sub, y_sub,
-    #              init_all=True, args=train_params, rng=rng,
-    #              var_list=model_sub.get_params())
-
-        for s in range(batch_size):
-            batch_xs = x_sub[s*batch_size: (s+1)*batch_size]
-            batch_ys = to_categorical(y_sub[s*batch_size: (s+1)*batch_size], nb_classes)
-            #print('I am here 0 : {0}'.format(x_sub.shape))
-            #print(y_sub.shape)
-            #print(batch_xs.shape)
-            #print(batch_ys.shape)
-            feed_dict = {x:batch_xs, y:batch_ys}
-            op, lval,pre = sess.run([optimiser, loss, preds_sub], feed_dict=feed_dict)
-        print("rho = {0}. loss : {1}".format(rho, sess.run(loss, feed_dict={x:batch_xs, y:batch_ys})))
-
-        #print('I am here -1 : {0}'.format(x_sub.shape))
-
-        # If we are not at last substitute training iteration, augment dataset
-        if rho < data_aug - 1:
-            #print("Augmenting substitute training data.")
-            # Perform the Jacobian augmentation
-            lmbda_coef = 2 * int(int(rho / 3) != 0) - 1
-            #print('I am here 1 : {0}'.format(x_sub.shape))
-            #print(y_sub.shape)
-            #print(len(grads))
-            #print(aug_batch_size)
-
-
-            #y_sub_labels = np.argmax(y_sub, axis=1).reshape(-1,1)
-            x_sub = jacobian_augmentation(sess, x, x_sub, y_sub, grads,
-                                          lmbda_coef * lmbda, aug_batch_size)
-
-            #print('I am here 2 : {0}'.format(y_sub.shape))
-            #print('I am here 2 : {0}'.format(y_sub_labels.shape))
-            #print("Labeling substitute training data.")
-            # Label the newly generated synthetic points using the black-box
-            #new_y_sub_labels = np.vstack((y_sub_labels, y_sub_labels))
-            #print('I am here 2.1 : {0}'.format(new_y_sub_labels.shape))
-            x_sub_prev = x_sub[int(len(x_sub)/2):]
-            eval_params = {'batch_size': batch_size}
-            #tmp = batch_eval(sess, [x], [bbox_preds], [x_sub_prev],args=eval_params)
-            tmp = batch_eval(sess,[x],[bbox_preds],[x_sub_prev],batch_size=batch_size)
-            #print(len(tmp))
-            bbox_val = tmp[0]
-            #print(y_sub_labels.shape)
-            #print(bbox_val.shape)
-            #print('I am here 3 : {0}'.format(x_sub.shape))
-
-            # Note here that we take the argmax because the adversary
-            # only has access to the label (not the probabilities) output
-            # by the black-box model
-            #tmp1 = np.argmax(bbox_val, axis=1)
-            #tmp2 = y_sub_labels[int(len(x_sub)/2):]
-            #print(tmp1.shape)
-            #print(tmp2.shape)
-            #print('I am here 4 : {0}'.format(x_sub.shape))
-            #new_y_sub_labels[int(len(x_sub)/2):] = np.argmax(bbox_val, axis=1).reshape(-1,1)
-            print(y_sub.shape)
-            print(bbox_val.shape)
-            y_sub[int(len(x_sub)/2):] = np.argmax(bbox_val, axis=1)
-            #y_sub = to_categorical(new_y_sub_labels, nb_classes)
-
-    return model_sub, preds_sub
-
 
 
 def train_sub(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
@@ -584,20 +279,29 @@ def train_sub(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
     :param rng: numpy.random.RandomState instance
     :return:
     """
+    assert(y_sub.shape[1]>1)
+
+    try:
+        saver.restore(sess, "./model.ckpt")
+        model_sub = tf.get_variable("logits", shape=[1])
+        preds_sub = tf.get_variable("probs", shape=[1])
+        return model_sub, preds_sub
+    except:
+        print("Model ckpt is not found. Retrain substitute starts.")
+
     # Define TF model graph (for the black-box model)
     model_sub = ModelSubstitute('model_s',nb_classes, session=sess, istrain=True)
-    #preds_sub = model_sub.get_logits(x)
     logits = model_sub.get_logits(x)
-    #loss_sub = CrossEntropy(model_sub, smoothing=0)
     loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y))
     optimiser = tf.train.AdamOptimizer().minimize(loss)
     preds_sub = tf.nn.softmax(logits=logits)
+
+    saver = tf.train.Saver()
 
     print("Defined TensorFlow model graph for the substitute.")
 
     # Define the Jacobian symbolically using TensorFlow
     grads = jacobian_graph(preds_sub, x, nb_classes)
-
     sess.run(tf.global_variables_initializer())
 
     def evaluate():
@@ -607,77 +311,54 @@ def train_sub(sess, x, y, bbox_preds, x_sub, y_sub, nb_classes,
     # Train the substitute and augment dataset alternatively
     for rho in xrange(data_aug):
         print("Substitute training epoch #" + str(rho))
-        #train_params = {
-        #    'nb_epochs': nb_epochs_s,
-        #    'batch_size': batch_size,
-        #    'learning_rate': learning_rate
-        #}
-    #    with TemporaryLogLevel(logging.WARNING, "cleverhans.utils.tf"):
-    #        train(sess, loss_sub, x, y, x_sub,
-    #              to_categorical(y_sub, nb_classes),
-    #              init_all=False, args=train_params, rng=rng,
-    #              var_list=model_sub.get_params())
-    #        train(sess, loss_sub, x_sub, y_sub,
-    #              init_all=True, args=train_params, rng=rng,
-    #              var_list=model_sub.get_params())
 
         for s in range(batch_size):
             batch_xs = x_sub[s*batch_size: (s+1)*batch_size]
             batch_ys = y_sub[s*batch_size: (s+1)*batch_size]
-            #print('I am here 0 : {0}'.format(x_sub.shape))
-            #print(y_sub.shape)
-            #print(batch_xs.shape)
-            #print(batch_ys.shape)
             feed_dict = {x:batch_xs, y:batch_ys}
             op, lval,pre = sess.run([optimiser, loss, preds_sub], feed_dict=feed_dict)
         print("rho = {0}. loss : {1}".format(rho, sess.run(loss, feed_dict={x:batch_xs, y:batch_ys})))
 
-        #print('I am here -1 : {0}'.format(x_sub.shape))
-
         # If we are not at last substitute training iteration, augment dataset
         if 0: # rho < data_aug - 1:
-            #print("Augmenting substitute training data.")
+            print("Augmenting substitute training data.")
             # Perform the Jacobian augmentation
             lmbda_coef = 2 * int(int(rho / 3) != 0) - 1
-            #print('I am here 1 : {0}'.format(x_sub.shape))
-            #print(y_sub.shape)
-            #print(len(grads))
-            #print(aug_batch_size)
-
-
             y_sub_labels = np.argmax(y_sub, axis=1).reshape(-1,1)
             x_sub = jacobian_augmentation(sess, x, x_sub, y_sub_labels, grads,
                                           lmbda_coef * lmbda, aug_batch_size)
 
-            #print('I am here 2 : {0}'.format(y_sub.shape))
-            #print('I am here 2 : {0}'.format(y_sub_labels.shape))
-            #print("Labeling substitute training data.")
             # Label the newly generated synthetic points using the black-box
             new_y_sub_labels = np.vstack((y_sub_labels, y_sub_labels))
-            #print('I am here 2.1 : {0}'.format(new_y_sub_labels.shape))
             x_sub_prev = x_sub[int(len(x_sub)/2):]
             eval_params = {'batch_size': batch_size}
-            #tmp = batch_eval(sess, [x], [bbox_preds], [x_sub_prev],args=eval_params)
             tmp = batch_eval(sess,[x],[bbox_preds],[x_sub_prev],batch_size=batch_size)
-            #print(len(tmp))
             bbox_val = tmp[0]
-            #print(y_sub_labels.shape)
-            #print(bbox_val.shape)
-            #print('I am here 3 : {0}'.format(x_sub.shape))
 
             # Note here that we take the argmax because the adversary
             # only has access to the label (not the probabilities) output
             # by the black-box model
             tmp1 = np.argmax(bbox_val, axis=1)
             tmp2 = y_sub_labels[int(len(x_sub)/2):]
-            #print(tmp1.shape)
-            #print(tmp2.shape)
-            #print('I am here 4 : {0}'.format(x_sub.shape))
             new_y_sub_labels[int(len(x_sub)/2):] = np.argmax(bbox_val, axis=1).reshape(-1,1)
             y_sub = to_categorical(new_y_sub_labels, nb_classes)
 
+    save_path = saver.save(sess, "./model.ckpt")
+    print("Model saved in path: %s" % save_path)
+
+    print(preds_sub.shape)
+    print(model_sub.shape)
+
     return model_sub, preds_sub
 
+def savefigfromarray(sample, filename = 'my2.png'):
+    from PIL import Image
+    data = sample
+    print(data.shape)
+    d = np.transpose(data, (1,2,0))
+    img = Image.fromarray(data*255,'RGB')
+    print(img)
+    img.save(filename)
 
 def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
                    test_end=10000, nb_classes=NB_CLASSES,
@@ -710,20 +391,16 @@ def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
     # Create TF session
     sess = tf.Session()
 
-    # Get MNIST data
-    # x_train, y_train, x_test, y_test = data_mnist(train_start=train_start,
-    #                                               train_end=train_end,
-    #                                               test_start=test_start,
-    #                                               test_end=test_end)
-
     t1 = time.time()
     x_train, y_train, x_VAL, y_VAL, x_test, y_test = read_gtsrb_dataset()
     print('Data reading time :', time.time()-t1, 'seconds')
 
     # Initialize substitute training set reserved for adversary
     x_sub = x_test[:holdout]
-    y_sub = np.argmax(y_test[:holdout], axis=1)
-    #y_sub = y_test[:holdout]
+
+    savefigfromarray(x_sub[0],filename = 'my2.ppm')
+    #y_sub = np.argmax(y_test[:holdout], axis=1)
+    y_sub = y_test[:holdout]
 
     print(x_sub.shape)
     print(y_sub.shape)
@@ -772,21 +449,12 @@ def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
     # Train substitute using method from https://arxiv.org/abs/1602.02697
     print("Training the substitute model.")
     t1 = time.time()
-    train_sub_out = train_sub1(sess, x, y, bbox_preds, x_train, y_train,
+
+    train_sub_out = train_sub(sess, x, y, bbox_preds, x_train, y_train,
                               nb_classes, nb_epochs_s, batch_size,
                               learning_rate, data_aug, lmbda, aug_batch_size,
                               rng, img_rows, img_cols, nchannels)
 
-    #train_sub_out = test_train_sub(sess, x, y, bbox_preds, x_train, y_train,
-    #                               nb_classes, nb_epochs_s, batch_size,
-    #                               learning_rate, data_aug, lmbda, aug_batch_size,
-    #                               rng, img_rows, img_cols, nchannels)
-
-
-    #train_sub_out = test_train_sub2(sess, x, y, bbox_preds, x_train, y_train,
-    #                               nb_classes, nb_epochs_s, batch_size,
-    #                               learning_rate, data_aug, lmbda, aug_batch_size,
-    #                               rng, img_rows, img_cols, nchannels)
     print('Substitute training time :', time.time()-t1, 'seconds')
 
     model_sub, preds_sub = train_sub_out
@@ -814,12 +482,90 @@ def gtsrb_blackbox(train_start=0, train_end=60000, test_start=0,
           'using the substitute: ' + str(accuracy))
     accuracies['bbox_on_sub_adv_ex'] = accuracy
 
-
     # Visualize one example:
-    x_adv_sub_0  = x_adv_sub.eval(feed_dict = {x:x_test[0]})
+    x_adv_sub_0  = x_adv_sub.eval(session=sess, feed_dict = {x:x_test[0].reshape(1,3,48,48)})
     print('ONE EXMAPLE: shape = {0}'.format(x_adv_sub_0.shape))
     print('symbolic x_adv_sub: shape = {0}'.format(x_adv_sub.shape))
+    np.save('x_adv_sub_0', x_adv_sub_0)
 
+    ###########################################################################
+    # Visualize adversarial examples as a grid of pictures.
+    ###########################################################################
+    source_samples = 10
+    img_rows = 48
+    img_cols = 48
+    nchannels = 3
+    print('Crafting ' + str(source_samples) + ' * ' + str(nb_classes - 1) +
+          ' adversarial examples')
+
+    # Keep track of success (adversarial example classified in target)
+    results = np.zeros((nb_classes, source_samples), dtype='i')
+
+    # Rate of perturbed features for each test set example and target class
+    perturbations = np.zeros((nb_classes, source_samples), dtype='f')
+
+    # Initialize our array for grid visualization
+    grid_shape = (nb_classes, nb_classes, img_rows, img_cols, nchannels)
+    grid_viz_data = np.zeros(grid_shape, dtype='f')
+
+    # Instantiate a SaliencyMapMethod attack object
+    # jsma = SaliencyMapMethod(model, back='tf', sess=sess)
+    # jsma_params = {'theta': 1., 'gamma': 0.1,
+    #                'clip_min': 0., 'clip_max': 1.,
+    #                'y_target': None}
+
+    figure = None
+    # Loop over the samples we want to perturb into adversarial examples
+    for sample_ind in xrange(0, source_samples):
+        print('--------------------------------------')
+        print('Attacking input %i/%i' % (sample_ind + 1, source_samples))
+        sample = x_test[sample_ind:(sample_ind + 1)]
+
+        # We want to find an adversarial example for each possible target class
+        # (i.e. all classes that differ from the label given in the dataset)
+        current_class = int(np.argmax(y_test[sample_ind]))
+        target_classes = other_classes(nb_classes, current_class)
+
+        # For the grid visualization, keep original images along the diagonal
+        grid_viz_data[current_class, current_class, :, :, :] = np.reshape(
+            sample, (img_rows, img_cols, nchannels))
+
+        # Loop over all target classes
+        for target in target_classes[:3]:
+            print('Generating adv. example for target class %i' % target)
+
+            # This call runs the Jacobian-based saliency map approach
+            one_hot_target = np.zeros((1, nb_classes), dtype=np.float32)
+            one_hot_target[0, target] = 1
+            # jsma_params['y_target'] = one_hot_target
+            #adv_x = jsma.generate_np(sample, **jsma_params)
+            adv_x = fgsm.generate_np(sample, **fgsm_par)
+
+            # Check if success was achieved
+            res = int(model_argmax(sess, x, preds_sub, adv_x) == target)
+
+            # Computer number of modified features
+            adv_x_reshape = adv_x.reshape(-1)
+            test_in_reshape = x_test[sample_ind].reshape(-1)
+            nb_changed = np.where(adv_x_reshape != test_in_reshape)[0].shape[0]
+            percent_perturb = float(nb_changed) / adv_x.reshape(-1).shape[0]
+
+            # Display the original and adversarial images side-by-side
+            fig1 = pair_visual(
+                np.reshape(sample, (img_rows, img_cols, nchannels)),
+                np.reshape(adv_x, (img_rows, img_cols, nchannels)), figure)
+
+            # Add our adversarial example to our grid data
+            fig2 = grid_viz_data[target, current_class, :, :, :] = np.reshape(
+                adv_x, (img_rows, img_cols, nchannels))
+
+            # Update the arrays for later analysis
+            results[target, sample_ind] = res
+            perturbations[target, sample_ind] = percent_perturb
+    fig1.savefig('fig1.png')
+    np.save('fig2.png', fig2)
+
+    print('--------------------------------------')
 
     return accuracies
 
