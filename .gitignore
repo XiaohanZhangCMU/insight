@@ -6,3 +6,7 @@ src/torch-flask-webapp/.DS_Store
 *~
 *.jpg
 *.JPEG
+*.h5.*
+*.npy
+*.ckpt.*
+tests
