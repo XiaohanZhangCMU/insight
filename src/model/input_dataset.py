@@ -70,7 +70,7 @@ def read_gtsrb_dataset(test_prop = 0.2, IMG_SIZE=48):
 
     except (IOError,OSError, KeyError):
         print("Error in reading X.h5."+str(IMG_SIZE)+" Processing all images...")
-        root_dir = '/home/ubuntu/datasets/GTSRB/train/'
+        root_dir = '/scratch/users/xzhang11/aws/datasets/GTSRB/train/'
         X, Y = create_h5(root_dir, h5_fname = 'X.h5.'+str(IMG_SIZE), IMG_SIZE=IMG_SIZE)
 
     try:
@@ -80,17 +80,17 @@ def read_gtsrb_dataset(test_prop = 0.2, IMG_SIZE=48):
 
     except (IOError,OSError, KeyError):
         print("Error in reading X_val.h5."+str(IMG_SIZE)+" Processing all images...")
-        root_dir = '/home/ubuntu/datasets/GTSRB/valid/'
+        root_dir = '/scratch/users/xzhang11/aws/datasets/GTSRB/valid/'
         X_val, Y_val = create_h5(root_dir, h5_fname = 'X_val.h5.'+str(IMG_SIZE), IMG_SIZE=IMG_SIZE)
 
     import pandas as pd
-    test = pd.read_csv('/home/ubuntu/datasets/GTSRB/GT-final_test.csv',sep=';')
+    test = pd.read_csv('/scratch/users/xzhang11/aws/datasets/GTSRB/GT-final_test.csv',sep=';')
 
     X_test = []
     Y_test = []
     i = 0
     for file_name, class_id  in zip(list(test['Filename']), list(test['ClassId'])):
-        img_path = os.path.join('/home/ubuntu/datasets/GTSRB/test/',file_name)
+        img_path = os.path.join('/scratch/users/xzhang11/aws/datasets/GTSRB/test/',file_name)
         X_test.append(preprocess_img(io.imread(img_path), 48))
         Y_test.append(class_id)
         i+=1
