@@ -1,30 +1,34 @@
-# Insight AI Project
+# Insight AI Project -- ProG-train
 
 ## Motivation for this project:
-- **training** : Progressively growing image resolution during training. Faster convergence? Better stability? Higher accuracy?
-- **adversarial attack** : Training with coarse images help nn to stuck with local minimum. Thus prevent adversarial example attack?
+- **training** : Progressively growing image resolution during training (ProG-train) an image classifier CNN model. ProG-train promises faster convergence and better numerical stability. The model thus trained is shown to generalize better than trained with fixed image size. ProG-train works with TensorFlow, Keras and Fastai.
+- **adversarial attack** : Set up interface of ProG-train with cleverhans. ProG-train enables training surrogate for blackbox faster.
 
 ## Prerequisite
 tensorflow
 keras
-gpu
+fastai
 cleverhans
+joblib
+scikit-image
 
+Install them with conda:
 ```
 conda install -c anaconda tensorflow-gpu 
 conda install keras
-```
-
-## Install
-Clone repository and update python path
-```
-git clone git@github.com:XiaohanZhangCMU/insight.git
-cd insight
 pip install joblib
 pip install scikit-image
 git clone https://github.com/tensorflow/cleverhans
 pip install -e ./cleverhans
 pip install sklearn
+```
+
+## Install and train a blackbox surrogate
+Clone repository
+```
+git clone git@github.com:XiaohanZhangCMU/insight.git
+cd insight
+python src/model/gtsrb_blackbox.py
 ```
 
 ## Configs
@@ -36,37 +40,7 @@ pip install sklearn
 ```
 # Example
 
-# Step 1
-# Step 2
-```
+# python src/model/pg_train_gtsrb.py trains a CNN model for GTSRB dataset
+# python src/model/gtsrb_blackbox.py trains a CNN surrogate and generate attacks with FGSM. 
 
-## Run Inference
-- Include instructions on how to run inference
-- i.e. image classification on a single image for a CNN deep learning project
-```
-# Example
-
-# Step 1
-# Step 2
-```
-
-## Build Model
-- Include instructions of how to build the model
-- This can be done either locally or on the cloud
-```
-# Example
-
-# Step 1
-# Step 2
-```
-
-
-## Analysis
-- Include some form of EDA (exploratory data analysis)
-- And/or include benchmarking of the model and results
-```
-# Example
-
-# Step 1
-# Step 2
-```
+``
