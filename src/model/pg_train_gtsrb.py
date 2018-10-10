@@ -25,6 +25,11 @@ K.set_image_data_format('channels_first')
 from input_dataset import read_gtsrb_dataset
 import time
 
+import argparse
+parser = argparse.ArgumentParser(description='Optional app description')
+train_opt = 0
+parser.add_argument('--train_opt', type=int, help='1 (default) or 0 to use or not use ProG-train')
+
 NUM_CLASSES = 43
 
 class TimeHistory(keras.callbacks.Callback):
@@ -76,10 +81,14 @@ def lr_schedule(epoch):
 batch_size = 32
 nb_epoch = 60 # 20
 model = cnn_model()
-# imag_sched = [24, 36, 48];
-imag_sched = [48];
 
-prefix = 'no_pg_'
+if train_opt == 0:
+    imag_sched = [48]
+    prefix = 'no_pg_'
+else:
+    imag_sched = [24, 36, 48]
+    prefix = 'pg_'
+
 log = open(prefix+'A.log','w')
 time_callback = TimeHistory()
 
