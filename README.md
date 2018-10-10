@@ -36,6 +36,8 @@ python pg_train_gtsrb.py --train_opt 0 (not using ProG-train)
 ```
 ### Plot results and check the convergence rate and validation accuracy.
 ```
+cd tests/analysis
+
 python plot_loss_vs_iterations.py
 ```
 ![](https://github.com/XiaohanZhangCMU/insight/blob/test_fastai/Xiaohan_Zhang_Demo_Final.png)
