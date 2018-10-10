@@ -9,4 +9,3 @@ src/torch-flask-webapp/.DS_Store
 *.h5.*
 *.npy
 *.ckpt.*
-tests
