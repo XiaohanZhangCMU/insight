@@ -28,11 +28,11 @@ pip install sklearn
 ```
 cd src/models/ 
 
-python pg_train_gtsrb.py --train ProG  (using ProG-train)
+python pg_train_gtsrb.py --train_opt 1  (using ProG-train, by default)
 
 and 
 
-python pg_train_gtsrb.py (without using ProG-train)
+python pg_train_gtsrb.py --train_opt 0 (not using ProG-train)
 ```
 ### Plot results and check the convergence rate and validation accuracy.
 ```
