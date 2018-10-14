@@ -1,4 +1,5 @@
 from fastai.conv_learner import *
+
 PATH = "/home/ubuntu/datasets/cifar10/"
 os.makedirs(PATH,exist_ok=True)
 
